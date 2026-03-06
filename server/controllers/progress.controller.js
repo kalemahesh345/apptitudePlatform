@@ -27,15 +27,15 @@ const getPerformanceTrend = async (req, res, next) => {
 
     if (period === 'monthly') {
       dateFormat = '%Y-%m';
-      dateRange = "datetime('now', '-6 months')";
+      dateRange = "DATE_SUB(NOW(), INTERVAL 6 MONTH)";
     } else {
-      dateFormat = '%Y-%W';
-      dateRange = "datetime('now', '-8 weeks')";
+      dateFormat = '%Y-%u';
+      dateRange = "DATE_SUB(NOW(), INTERVAL 8 WEEK)";
     }
 
     const [trends] = await pool.query(`
       SELECT 
-        strftime('${dateFormat}', completed_at) as period,
+        DATE_FORMAT(completed_at, '${dateFormat}') as period,
         COUNT(*) as tests_taken,
         AVG(accuracy) as avg_accuracy,
         AVG(score) as avg_score

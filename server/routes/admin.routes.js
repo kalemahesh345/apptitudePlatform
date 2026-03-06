@@ -5,7 +5,7 @@ const {
   createQuestion, updateQuestion, deleteQuestion, bulkUploadQuestions,
   createTest, updateTest, deleteTest,
   getAllResults, getLeaderboard, getQuestionStats,
-  generateResultPDF
+  generateResultPDF, downloadTemplate
 } = require('../controllers/admin.controller');
 const { authenticate, authorize } = require('../middleware/auth');
 
@@ -30,6 +30,7 @@ router.post('/questions', createQuestion);
 router.put('/questions/:id', updateQuestion);
 router.delete('/questions/:id', deleteQuestion);
 router.post('/questions/upload', upload.single('file'), bulkUploadQuestions);
+router.get('/questions/template', downloadTemplate);
 
 // Results & Leaderboard
 router.get('/results', getAllResults);

@@ -62,11 +62,18 @@ const Attempt = {
   async complete(attemptId, data) {
     await pool.query(`
       UPDATE test_attempts 
-      SET status = 'completed', completed_at = datetime('now'), time_taken_seconds = ?, 
+      SET status = 'completed', completed_at = NOW(), time_taken_seconds = ?, 
           score = ?, total_marks = ?, correct_count = ?, incorrect_count = ?, 
           unanswered_count = ?, accuracy = ?
       WHERE id = ?
     `, [data.time_taken, data.score, data.total_marks, data.correct, data.incorrect, data.unanswered, data.accuracy, attemptId]);
+  },
+
+  async updateTabSwitchCount(attemptId, count) {
+    await pool.query(
+      'UPDATE test_attempts SET tab_switch_count = ? WHERE id = ?',
+      [count, attemptId]
+    );
   },
 
   async getAnswers(attemptId) {
@@ -146,7 +153,7 @@ const Attempt = {
   async getDailyAttemptCount(userId) {
     const [rows] = await pool.query(`
       SELECT COUNT(*) as count FROM test_attempts 
-      WHERE user_id = ? AND DATE(started_at) = date('now')
+      WHERE user_id = ? AND DATE(started_at) = CURDATE()
     `, [userId]);
     return rows[0].count;
   }

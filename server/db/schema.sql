@@ -1,8 +1,8 @@
--- Aptitude Platform Database Schema
--- Run this file to create all required tables
+-- Aptitude Platform Database Schema (MySQL)
+-- Run: mysql -u root -psystem < db/schema.sql
 
-CREATE DATABASE IF NOT EXISTS aptitude_platform;
-USE aptitude_platform;
+CREATE DATABASE IF NOT EXISTS apptitude_db;
+USE apptitude_db;
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS options (
   INDEX idx_question_id (question_id)
 );
 
--- Test Attempts (a user starting a test)
+-- Test Attempts
 CREATE TABLE IF NOT EXISTS test_attempts (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS test_attempts (
   incorrect_count INT DEFAULT 0,
   unanswered_count INT DEFAULT 0,
   accuracy DECIMAL(5,2) DEFAULT 0,
+  tab_switch_count INT DEFAULT 0,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (test_id) REFERENCES tests(id) ON DELETE CASCADE,
   INDEX idx_user_id (user_id),

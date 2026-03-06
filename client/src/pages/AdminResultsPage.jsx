@@ -57,8 +57,8 @@ export default function AdminResultsPage() {
 
   // Summary stats
   const totalAttempts = results.length;
-  const avgAccuracy = results.length > 0 ? (results.reduce((s, r) => s + (r.accuracy || 0), 0) / results.length).toFixed(1) : 0;
-  const passCount = results.filter(r => r.accuracy >= 50).length;
+  const avgAccuracy = results.length > 0 ? (results.reduce((s, r) => s + (parseFloat(r.accuracy) || 0), 0) / results.length).toFixed(1) : 0;
+  const passCount = results.filter(r => parseFloat(r.accuracy) >= 50).length;
 
   if (loading) return <div className="loading-spinner"><div className="spinner"></div></div>;
 

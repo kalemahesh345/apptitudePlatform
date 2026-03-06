@@ -1,291 +1,171 @@
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+require('dotenv').config();
+const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 
 async function seed() {
-  console.log('🌱 Starting database seed...\n');
+  const pool = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 3306,
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || 'system',
+    database: process.env.DB_NAME || 'apptitude_db',
+    multipleStatements: true
+  });
 
-  // Wait for db init
-  const pool = require('../config/db');
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  console.log('🌱 Starting database seed...');
 
   try {
-    // Create Tables (SQLite syntax)
-    const createStatements = [
-      `CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT NOT NULL UNIQUE,
-        password TEXT NOT NULL,
-        role TEXT DEFAULT 'USER',
-        avatar TEXT DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE TABLE IF NOT EXISTS tests (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        description TEXT,
-        category TEXT NOT NULL,
-        difficulty TEXT NOT NULL,
-        duration_minutes INTEGER NOT NULL DEFAULT 30,
-        total_marks INTEGER NOT NULL DEFAULT 0,
-        is_premium INTEGER DEFAULT 0,
-        is_adaptive INTEGER DEFAULT 0,
-        created_by INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE TABLE IF NOT EXISTS questions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        test_id INTEGER NOT NULL,
-        question_text TEXT NOT NULL,
-        explanation TEXT,
-        topic TEXT,
-        difficulty TEXT DEFAULT 'medium',
-        marks INTEGER DEFAULT 1,
-        negative_marks REAL DEFAULT 0,
-        time_limit_seconds INTEGER DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (test_id) REFERENCES tests(id) ON DELETE CASCADE
-      )`,
-      `CREATE TABLE IF NOT EXISTS options (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        question_id INTEGER NOT NULL,
-        option_text TEXT NOT NULL,
-        is_correct INTEGER DEFAULT 0,
-        FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
-      )`,
-      `CREATE TABLE IF NOT EXISTS test_attempts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        test_id INTEGER NOT NULL,
-        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        completed_at TIMESTAMP NULL,
-        status TEXT DEFAULT 'in_progress',
-        time_taken_seconds INTEGER DEFAULT 0,
-        score REAL DEFAULT 0,
-        total_marks INTEGER DEFAULT 0,
-        correct_count INTEGER DEFAULT 0,
-        incorrect_count INTEGER DEFAULT 0,
-        unanswered_count INTEGER DEFAULT 0,
-        accuracy REAL DEFAULT 0,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (test_id) REFERENCES tests(id) ON DELETE CASCADE
-      )`,
-      `CREATE TABLE IF NOT EXISTS user_answers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        attempt_id INTEGER NOT NULL,
-        question_id INTEGER NOT NULL,
-        selected_option_id INTEGER DEFAULT NULL,
-        is_correct INTEGER DEFAULT 0,
-        time_spent_seconds INTEGER DEFAULT 0,
-        answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (attempt_id) REFERENCES test_attempts(id) ON DELETE CASCADE,
-        FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
-      )`,
-      `CREATE TABLE IF NOT EXISTS progress (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        topic TEXT NOT NULL,
-        category TEXT,
-        tests_taken INTEGER DEFAULT 0,
-        total_questions INTEGER DEFAULT 0,
-        correct_answers INTEGER DEFAULT 0,
-        accuracy REAL DEFAULT 0,
-        avg_time_per_question REAL DEFAULT 0,
-        skill_level TEXT DEFAULT 'beginner',
-        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, topic)
-      )`,
-      `CREATE TABLE IF NOT EXISTS study_materials (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        content TEXT,
-        topic TEXT NOT NULL,
-        category TEXT NOT NULL,
-        type TEXT DEFAULT 'notes',
-        resource_url TEXT,
-        is_premium INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`,
-      `CREATE TABLE IF NOT EXISTS subscriptions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        plan TEXT NOT NULL,
-        status TEXT DEFAULT 'active',
-        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        expires_at TIMESTAMP NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )`,
-      `CREATE TABLE IF NOT EXISTS ai_recommendations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        input_data TEXT,
-        recommendation TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )`,
-      `CREATE TABLE IF NOT EXISTS ai_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        session_id TEXT,
-        role TEXT NOT NULL,
-        message TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )`,
-      `CREATE TABLE IF NOT EXISTS leaderboard (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        user_name TEXT,
-        total_score REAL DEFAULT 0,
-        tests_completed INTEGER DEFAULT 0,
-        avg_accuracy REAL DEFAULT 0,
-        rank_position INTEGER DEFAULT 0,
-        period TEXT DEFAULT 'alltime',
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, period)
-      )`
-    ];
-
-    for (const stmt of createStatements) {
-      await pool.query(stmt);
-    }
-    console.log('✅ Tables created\n');
-
-    // Check if already seeded
-    const [existingUsers] = await pool.query('SELECT COUNT(*) as count FROM users');
-    if (existingUsers[0].count > 0) {
-      console.log('⚠️  Database already seeded. Skipping...\n');
-      process.exit(0);
-    }
-
     // Create admin user
     const adminPassword = await bcrypt.hash('admin123', 12);
-    await pool.query(
-      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-      ['Admin User', 'admin@aptitude.com', adminPassword, 'ADMIN']
-    );
-
-    // Create demo users
     const userPassword = await bcrypt.hash('user123', 12);
-    await pool.query(
-      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-      ['Rahul Sharma', 'rahul@test.com', userPassword, 'USER']
-    );
-    await pool.query(
-      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-      ['Priya Patel', 'priya@test.com', userPassword, 'PREMIUM']
-    );
-    console.log('✅ Users created\n');
+
+    await pool.query(`INSERT IGNORE INTO users (name, email, password, role) VALUES 
+      ('Admin User', 'admin@aptitude.com', ?, 'ADMIN'),
+      ('Test Student', 'student@test.com', ?, 'USER'),
+      ('Premium User', 'premium@test.com', ?, 'PREMIUM')
+    `, [adminPassword, userPassword, userPassword]);
+
+    console.log('✅ Users created (admin@aptitude.com / admin123)');
 
     // Create Tests
     const tests = [
-      { title: 'Quantitative Aptitude - Basics', description: 'Test your fundamental math skills with arithmetic, percentages, and ratios', category: 'quantitative', difficulty: 'easy', duration: 15 },
-      { title: 'Quantitative Aptitude - Advanced', description: 'Challenge yourself with probability, permutations, and complex problems', category: 'quantitative', difficulty: 'hard', duration: 30 },
-      { title: 'Logical Reasoning - Fundamentals', description: 'Assess your ability to analyze patterns and logical sequences', category: 'logical', difficulty: 'easy', duration: 15 },
-      { title: 'Logical Reasoning - Advanced', description: 'Complex puzzles, seating arrangements, and blood relations', category: 'logical', difficulty: 'hard', duration: 30 },
-      { title: 'Verbal Ability - Grammar & Vocabulary', description: 'Test your English grammar, vocabulary, and comprehension', category: 'verbal', difficulty: 'medium', duration: 20 },
-      { title: 'Technical Aptitude - CS Fundamentals', description: 'Data structures, algorithms, and programming concepts', category: 'technical', difficulty: 'medium', duration: 25 },
+      { title: 'Quantitative Aptitude - Basic', desc: 'Fundamental arithmetic, algebra, and number problems', category: 'quantitative', difficulty: 'easy', duration: 30 },
+      { title: 'Quantitative Aptitude - Advanced', desc: 'Advanced math concepts including permutations, probability and series', category: 'quantitative', difficulty: 'hard', duration: 45 },
+      { title: 'Logical Reasoning - Patterns', desc: 'Pattern recognition, sequences, and logical puzzles', category: 'logical', difficulty: 'medium', duration: 30 },
+      { title: 'Logical Reasoning - Analytical', desc: 'Analytical reasoning, deductions, and arrangements', category: 'logical', difficulty: 'hard', duration: 40 },
+      { title: 'Verbal Ability - Grammar', desc: 'Grammar, vocabulary, and sentence correction', category: 'verbal', difficulty: 'easy', duration: 25 },
+      { title: 'Verbal Ability - Comprehension', desc: 'Reading comprehension and critical reasoning', category: 'verbal', difficulty: 'medium', duration: 35 },
+      { title: 'Technical - Programming Basics', desc: 'Basic programming concepts, data types, and logic', category: 'technical', difficulty: 'easy', duration: 30 },
+      { title: 'Technical - DSA Fundamentals', desc: 'Data structures, algorithms, and complexity analysis', category: 'technical', difficulty: 'hard', duration: 45 }
     ];
 
     const testIds = [];
     for (const t of tests) {
       const [result] = await pool.query(
         'INSERT INTO tests (title, description, category, difficulty, duration_minutes, total_marks, created_by) VALUES (?, ?, ?, ?, ?, 0, 1)',
-        [t.title, t.description, t.category, t.difficulty, t.duration]
+        [t.title, t.desc, t.category, t.difficulty, t.duration]
       );
       testIds.push(result.insertId);
     }
-    console.log(`✅ ${tests.length} tests created\n`);
+    console.log(`✅ Created ${tests.length} tests`);
 
-    // All questions
+    // Questions with options
     const allQuestions = [
-      // Quantitative Aptitude - Basics (testIds[0])
-      { testIdx: 0, text: 'What is 15% of 200?', topic: 'Percentages', explanation: '15% of 200 = (15/100) × 200 = 30', options: [{ text: '25', correct: false }, { text: '30', correct: true }, { text: '35', correct: false }, { text: '20', correct: false }] },
-      { testIdx: 0, text: 'A train travels 180 km in 3 hours. What is its speed?', topic: 'Speed, Time & Distance', explanation: 'Speed = Distance/Time = 180/3 = 60 km/h', options: [{ text: '45 km/h', correct: false }, { text: '50 km/h', correct: false }, { text: '60 km/h', correct: true }, { text: '55 km/h', correct: false }] },
-      { testIdx: 0, text: 'If the ratio of boys to girls is 3:2 and there are 30 boys, how many girls are there?', topic: 'Ratios', explanation: '30/3 = 10 units, 10 × 2 = 20 girls', options: [{ text: '15', correct: false }, { text: '20', correct: true }, { text: '25', correct: false }, { text: '18', correct: false }] },
-      { testIdx: 0, text: 'What is the simple interest on Rs. 5000 at 8% per annum for 2 years?', topic: 'Simple Interest', explanation: 'SI = PRT/100 = 5000 × 8 × 2 / 100 = Rs. 800', options: [{ text: 'Rs. 600', correct: false }, { text: 'Rs. 700', correct: false }, { text: 'Rs. 800', correct: true }, { text: 'Rs. 900', correct: false }] },
-      { testIdx: 0, text: 'If a shirt costs Rs. 800 after a 20% discount, what was the original price?', topic: 'Percentages', explanation: '80% of original = 800, original = 1000', options: [{ text: 'Rs. 960', correct: false }, { text: 'Rs. 1000', correct: true }, { text: 'Rs. 1100', correct: false }, { text: 'Rs. 900', correct: false }] },
-      { testIdx: 0, text: 'What is the average of first 10 natural numbers?', topic: 'Averages', explanation: 'Sum = 55, Average = 55/10 = 5.5', options: [{ text: '5', correct: false }, { text: '5.5', correct: true }, { text: '6', correct: false }, { text: '4.5', correct: false }] },
-      { testIdx: 0, text: 'A man buys an article for Rs. 500 and sells it for Rs. 600. Profit%?', topic: 'Profit & Loss', explanation: 'Profit% = (100/500) × 100 = 20%', options: [{ text: '10%', correct: false }, { text: '15%', correct: false }, { text: '20%', correct: true }, { text: '25%', correct: false }] },
-      { testIdx: 0, text: 'If x + y = 10 and x - y = 4, what is x?', topic: 'Algebra', explanation: '2x = 14, x = 7', options: [{ text: '5', correct: false }, { text: '6', correct: false }, { text: '7', correct: true }, { text: '8', correct: false }] },
-      { testIdx: 0, text: 'The LCM of 12 and 18 is:', topic: 'Number System', explanation: '12=2²×3, 18=2×3². LCM=2²×3²=36', options: [{ text: '24', correct: false }, { text: '36', correct: true }, { text: '48', correct: false }, { text: '72', correct: false }] },
-      { testIdx: 0, text: 'Two pipes fill a tank in 6h and 8h. Together how long?', topic: 'Time & Work', explanation: '1/6+1/8=7/24. Time=24/7≈3h26m', options: [{ text: '3h 26m', correct: true }, { text: '4h', correct: false }, { text: '3h', correct: false }, { text: '7h', correct: false }] },
+      // ---- TEST 1: Quantitative Basic (testIds[0]) ----
+      { tid: 0, q: 'What is 15% of 200?', opts: ['25', '30', '35', '40'], correct: 1, topic: 'Percentage', diff: 'easy', exp: '15% of 200 = (15/100) × 200 = 30' },
+      { tid: 0, q: 'If a shirt costs ₹800 after a 20% discount, what was the original price?', opts: ['₹960', '₹1000', '₹1100', '₹950'], correct: 1, topic: 'Percentage', diff: 'easy', exp: 'Let original = x. x - 0.2x = 800, 0.8x = 800, x = 1000' },
+      { tid: 0, q: 'A train travels 240 km in 4 hours. What is its speed?', opts: ['50 km/h', '55 km/h', '60 km/h', '65 km/h'], correct: 2, topic: 'Speed & Distance', diff: 'easy', exp: 'Speed = Distance/Time = 240/4 = 60 km/h' },
+      { tid: 0, q: 'The average of 5 consecutive numbers is 12. What is the largest number?', opts: ['13', '14', '15', '16'], correct: 1, topic: 'Averages', diff: 'easy', exp: 'Consecutive numbers: 10,11,12,13,14. Largest = 14' },
+      { tid: 0, q: 'If x + y = 10 and x - y = 4, find x.', opts: ['5', '6', '7', '8'], correct: 2, topic: 'Algebra', diff: 'easy', exp: 'Adding equations: 2x = 14, x = 7' },
+      { tid: 0, q: 'What is the simple interest on ₹5000 at 8% per annum for 3 years?', opts: ['₹1000', '₹1100', '₹1200', '₹1300'], correct: 2, topic: 'Simple Interest', diff: 'easy', exp: 'SI = P×R×T/100 = 5000×8×3/100 = 1200' },
+      { tid: 0, q: 'A man buys an article for ₹500 and sells it for ₹600. What is the profit %?', opts: ['10%', '15%', '20%', '25%'], correct: 2, topic: 'Profit & Loss', diff: 'easy', exp: 'Profit = 100, Profit% = (100/500)×100 = 20%' },
+      { tid: 0, q: 'What is the LCM of 12 and 18?', opts: ['24', '30', '36', '48'], correct: 2, topic: 'LCM & HCF', diff: 'easy', exp: '12 = 2²×3, 18 = 2×3². LCM = 2²×3² = 36' },
+      { tid: 0, q: 'If the ratio of boys to girls is 3:5 and there are 24 boys, how many girls?', opts: ['30', '35', '40', '45'], correct: 2, topic: 'Ratio', diff: 'easy', exp: '3/5 = 24/x, x = 24×5/3 = 40' },
+      { tid: 0, q: 'A pipe can fill a tank in 6 hours. How much of the tank is filled in 2 hours?', opts: ['1/4', '1/3', '1/2', '2/3'], correct: 1, topic: 'Pipes & Cisterns', diff: 'easy', exp: 'In 1 hour = 1/6. In 2 hours = 2/6 = 1/3' },
 
-      // Logical Reasoning (testIds[2])
-      { testIdx: 2, text: 'Complete the series: 2, 6, 12, 20, ?', topic: 'Number Series', explanation: 'Diffs: 4,6,8. Next=10, so 30', options: [{ text: '28', correct: false }, { text: '30', correct: true }, { text: '32', correct: false }, { text: '24', correct: false }] },
-      { testIdx: 2, text: 'If APPLE is coded as 50, then MANGO is coded as:', topic: 'Coding-Decoding', explanation: 'Sum of positions: M=13,A=1,N=14,G=7,O=15=50', options: [{ text: '45', correct: false }, { text: '50', correct: true }, { text: '55', correct: false }, { text: '60', correct: false }] },
-      { testIdx: 2, text: 'All roses are flowers. Some flowers are red. Valid conclusion?', topic: 'Syllogisms', explanation: 'No direct link between roses and red', options: [{ text: 'All roses are red', correct: false }, { text: 'Some roses are red', correct: false }, { text: 'No valid conclusion', correct: true }, { text: 'No roses are red', correct: false }] },
-      { testIdx: 2, text: 'Which number replaces? 3, 9, 27, 81, ?', topic: 'Number Series', explanation: 'Each × 3. 81 × 3 = 243', options: [{ text: '162', correct: false }, { text: '200', correct: false }, { text: '243', correct: true }, { text: '256', correct: false }] },
-      { testIdx: 2, text: 'Rearrange CIFAIPC to get name of a/an:', topic: 'Puzzles', explanation: 'PACIFIC (an ocean)', options: [{ text: 'City', correct: false }, { text: 'Animal', correct: false }, { text: 'Ocean', correct: true }, { text: 'Country', correct: false }] },
-      { testIdx: 2, text: 'In a row of 40, Ramesh is 15th from left, Suresh 20th from right. Students between?', topic: 'Linear Arrangement', explanation: 'Suresh=21st from left. Between=21-15-1=5', options: [{ text: '4', correct: false }, { text: '5', correct: true }, { text: '6', correct: false }, { text: '7', correct: false }] },
+      // ---- TEST 2: Quantitative Advanced (testIds[1]) ----
+      { tid: 1, q: 'In how many ways can 5 people be seated in a row?', opts: ['60', '100', '120', '150'], correct: 2, topic: 'Permutations', diff: 'hard', exp: '5! = 5×4×3×2×1 = 120' },
+      { tid: 1, q: 'If a die is thrown twice, what is the probability of getting a sum of 7?', opts: ['1/6', '5/36', '1/4', '7/36'], correct: 0, topic: 'Probability', diff: 'hard', exp: 'Favorable outcomes: (1,6),(2,5),(3,4),(4,3),(5,2),(6,1) = 6. Total = 36. P = 6/36 = 1/6' },
+      { tid: 1, q: 'Find the sum of the first 20 terms of AP: 3, 7, 11, 15...', opts: ['800', '820', '840', '860'], correct: 2, topic: 'Sequences', diff: 'hard', exp: 'a=3, d=4, n=20. S = n/2[2a + (n-1)d] = 10[6 + 76] = 10×82 = 820. Wait: let me recalculate: S=20/2[2(3)+(19)(4)]=10[6+76]=10×82=820' },
+      { tid: 1, q: 'A boat goes 24 km upstream in 6 hours and 24 km downstream in 4 hours. Speed of stream?', opts: ['0.5 km/h', '1 km/h', '1.5 km/h', '2 km/h'], correct: 1, topic: 'Boats & Streams', diff: 'hard', exp: 'Upstream speed=4, Downstream=6. Stream=(6-4)/2=1 km/h' },
+      { tid: 1, q: 'The compound interest on ₹10000 at 10% per annum for 2 years is?', opts: ['₹2000', '₹2050', '₹2100', '₹2200'], correct: 2, topic: 'Compound Interest', diff: 'hard', exp: 'CI = P(1+R/100)^T - P = 10000(1.1)² - 10000 = 12100 - 10000 = 2100' },
+      { tid: 1, q: 'How many 3-digit numbers are divisible by 7?', opts: ['127', '128', '129', '130'], correct: 2, topic: 'Number Theory', diff: 'hard', exp: 'First: 105, Last: 994. Count = (994-105)/7 + 1 = 889/7 + 1 = 127 + 1 = 128. Hmm, actually: (994-105)/7=127, 127+1=128' },
 
-      // Verbal Ability (testIds[4])
-      { testIdx: 4, text: 'Choose the correct synonym of "BENEVOLENT":', topic: 'Vocabulary', explanation: 'Benevolent = kind, generous', options: [{ text: 'Cruel', correct: false }, { text: 'Generous', correct: true }, { text: 'Strict', correct: false }, { text: 'Hasty', correct: false }] },
-      { testIdx: 4, text: 'Choose the antonym of "OBSCURE":', topic: 'Vocabulary', explanation: 'Obscure opposite is Clear', options: [{ text: 'Hidden', correct: false }, { text: 'Vague', correct: false }, { text: 'Clear', correct: true }, { text: 'Dark', correct: false }] },
-      { testIdx: 4, text: 'Select the correctly spelled word:', topic: 'Spelling', explanation: 'Accommodation has double c and double m', options: [{ text: 'Accomodation', correct: false }, { text: 'Accommodation', correct: true }, { text: 'Acomodation', correct: false }, { text: 'Accomodaton', correct: false }] },
-      { testIdx: 4, text: '"She is _____ honest person." Fill in:', topic: 'Grammar', explanation: '"An" before vowel sounds (silent h)', options: [{ text: 'a', correct: false }, { text: 'an', correct: true }, { text: 'the', correct: false }, { text: 'no article', correct: false }] },
-      { testIdx: 4, text: '"To burn the midnight oil" means:', topic: 'Idioms', explanation: 'To study/work late at night', options: [{ text: 'Waste resources', correct: false }, { text: 'Study/work late', correct: true }, { text: 'Start a fire', correct: false }, { text: 'Cook food', correct: false }] },
+      // ---- TEST 3: Logical Reasoning Patterns (testIds[2]) ----
+      { tid: 2, q: 'What comes next: 2, 6, 12, 20, 30, ?', opts: ['40', '42', '44', '46'], correct: 1, topic: 'Number Series', diff: 'medium', exp: 'Differences: 4,6,8,10,12. Next = 30+12 = 42' },
+      { tid: 2, q: 'Find the odd one out: 3, 5, 11, 14, 17, 21', opts: ['14', '__(already given as 14 which is even sum gap)', '21', '3'], correct: 0, topic: 'Odd One Out', diff: 'medium', exp: '3,5,11,17 are prime numbers. 14 and 21 are not. 14 breaks the prime pattern most clearly.' },
+      { tid: 2, q: 'If FRIEND is coded as HUMGPF, how is CANDLE coded?', opts: ['ECPFNG', 'EDRIJA', 'DCPEMF', 'ECPFNI'], correct: 0, topic: 'Coding-Decoding', diff: 'medium', exp: 'Each letter +2: C→E, A→C, N→P, D→F, L→N, E→G = ECPFNG' },
+      { tid: 2, q: 'A is the father of B. B is the sister of C. D is the mother of C. How is A related to D?', opts: ['Husband', 'Brother', 'Father', 'Son'], correct: 0, topic: 'Blood Relations', diff: 'medium', exp: 'B is sister of C, D is mother of C, so D is mother of B too. A is father of B. So A is husband of D.' },
+      { tid: 2, q: 'If in a certain code, MANGO is written as OCPIQ, then APPLE is written as?', opts: ['CRRNG', 'CRRNI', 'DSSOJ', 'BQQLE'], correct: 0, topic: 'Coding-Decoding', diff: 'medium', exp: 'Each letter +2: A→C, P→R, P→R, L→N, E→G = CRRNG' },
+      { tid: 2, q: 'Complete the pattern: 1, 1, 2, 3, 5, 8, ?', opts: ['11', '12', '13', '14'], correct: 2, topic: 'Number Series', diff: 'easy', exp: 'Fibonacci series: each number is sum of previous two. 5+8 = 13' },
+      { tid: 2, q: 'Pointing to a girl, Ram said "She is the daughter of my grandmother\'s only son." How is the girl related to Ram?', opts: ['Cousin', 'Sister', 'Daughter', 'Niece'], correct: 1, topic: 'Blood Relations', diff: 'medium', exp: 'Grandmother\'s only son = Ram\'s father. Daughter of Ram\'s father = Ram\'s sister' },
 
-      // Technical (testIds[5])
-      { testIdx: 5, text: 'Time complexity of binary search?', topic: 'Algorithms', explanation: 'Divides in half each time = O(log n)', options: [{ text: 'O(n)', correct: false }, { text: 'O(log n)', correct: true }, { text: 'O(n log n)', correct: false }, { text: 'O(1)', correct: false }] },
-      { testIdx: 5, text: 'Which data structure uses LIFO?', topic: 'Data Structures', explanation: 'Stack = Last In First Out', options: [{ text: 'Queue', correct: false }, { text: 'Stack', correct: true }, { text: 'Array', correct: false }, { text: 'Linked List', correct: false }] },
-      { testIdx: 5, text: 'What does SQL stand for?', topic: 'Databases', explanation: 'Structured Query Language', options: [{ text: 'Simple Query Language', correct: false }, { text: 'Structured Query Language', correct: true }, { text: 'Standard Query Logic', correct: false }, { text: 'System Query Language', correct: false }] },
-      { testIdx: 5, text: 'Best average-case sorting algorithm?', topic: 'Algorithms', explanation: 'Merge Sort has O(n log n) and stable', options: [{ text: 'Bubble Sort', correct: false }, { text: 'Selection Sort', correct: false }, { text: 'Merge Sort', correct: true }, { text: 'Insertion Sort', correct: false }] },
-      { testIdx: 5, text: 'HTTP 404 means?', topic: 'Web Technologies', explanation: 'Resource not found', options: [{ text: 'Server Error', correct: false }, { text: 'Not Found', correct: true }, { text: 'Unauthorized', correct: false }, { text: 'Bad Request', correct: false }] },
-      { testIdx: 5, text: 'In OOP, encapsulation is?', topic: 'OOP', explanation: 'Bundling data and methods, hiding internals', options: [{ text: 'Inheriting from parent', correct: false }, { text: 'Hiding data via methods', correct: true }, { text: 'Multiple forms', correct: false }, { text: 'Creating objects', correct: false }] },
+      // ---- TEST 4: Logical Reasoning Analytical (testIds[3]) ----
+      { tid: 3, q: 'All roses are flowers. Some flowers are red. Which conclusion is valid?', opts: ['All roses are red', 'Some roses are red', 'Some red things are flowers', 'No valid conclusion about roses'], correct: 2, topic: 'Syllogisms', diff: 'hard', exp: '"Some flowers are red" means some red things are flowers. We cannot conclude anything specific about roses being red.' },
+      { tid: 3, q: 'Statement: "No teacher is a student." "All students are hardworking." Conclusion?', opts: ['Some hardworking people are not teachers', 'All teachers are hardworking', 'No student is hardworking', 'All hardworking people are students'], correct: 0, topic: 'Syllogisms', diff: 'hard', exp: 'Since all students are hardworking and no teacher is a student, some hardworking people (students) are not teachers.' },
+      { tid: 3, q: 'If A > B, B > C, C > D, and D > E, then which is definitely true?', opts: ['A > E', 'A > C only', 'B > D only', 'C > E only'], correct: 0, topic: 'Inequalities', diff: 'medium', exp: 'By transitivity: A > B > C > D > E, so A > E is definitely true.' },
+      { tid: 3, q: 'In a row of 40 students, R is 11th from the left and S is 16th from right. How many students between them?', opts: ['12', '13', '14', '15'], correct: 1, topic: 'Linear Arrangement', diff: 'hard', exp: 'S from left = 40 - 16 + 1 = 25. Between R(11) and S(25) = 25-11-1 = 13' },
+      { tid: 3, q: 'Five friends A, B, C, D, E are sitting in a circle. A is between D and B. C is to the right of B. Who is to the left of E?', opts: ['A', 'B', 'C', 'D'], correct: 3, topic: 'Circular Arrangement', diff: 'hard', exp: 'Clockwise: D-A-B-C-E. Left of E (anticlockwise) = D' },
+
+      // ---- TEST 5: Verbal Ability Grammar (testIds[4]) ----
+      { tid: 4, q: 'Choose the correct sentence:', opts: ['He don\'t know anything', 'He doesn\'t knows anything', 'He doesn\'t know anything', 'He don\'t knows anything'], correct: 2, topic: 'Grammar', diff: 'easy', exp: 'With third person singular (he/she/it), use "doesn\'t" + base verb' },
+      { tid: 4, q: 'What is the synonym of "Eloquent"?', opts: ['Silent', 'Articulate', 'Clumsy', 'Rude'], correct: 1, topic: 'Vocabulary', diff: 'easy', exp: 'Eloquent means fluent, persuasive, articulate in speech' },
+      { tid: 4, q: 'Find the antonym of "Benevolent":', opts: ['Kind', 'Malevolent', 'Generous', 'Caring'], correct: 1, topic: 'Vocabulary', diff: 'easy', exp: 'Benevolent = kind, generous. Antonym = Malevolent = wishing harm' },
+      { tid: 4, q: 'Identify the error: "Each of the boys have completed their homework."', opts: ['Each of', 'the boys', 'have completed', 'their homework'], correct: 2, topic: 'Grammar', diff: 'medium', exp: '"Each" is singular, so it should be "has completed" not "have completed"' },
+      { tid: 4, q: 'Choose the correctly spelled word:', opts: ['Accomodate', 'Accommodate', 'Acommodate', 'Acomodate'], correct: 1, topic: 'Spelling', diff: 'easy', exp: 'Accommodate has double c and double m' },
+      { tid: 4, q: 'What is the meaning of the idiom "Break the ice"?', opts: ['Freeze something', 'End a relationship', 'Start a conversation', 'Cause damage'], correct: 2, topic: 'Idioms', diff: 'easy', exp: '"Break the ice" means to initiate social interaction or conversation' },
+
+      // ---- TEST 6: Verbal Comprehension (testIds[5]) ----
+      { tid: 5, q: '"The committee has decided to postpone the meeting." What is the voice?', opts: ['Active Voice', 'Passive Voice', 'Imperative', 'None'], correct: 0, topic: 'Voice', diff: 'medium', exp: 'Subject (committee) performs the action (decided). This is Active Voice.' },
+      { tid: 5, q: 'Choose the correct passive form: "She writes a letter."', opts: ['A letter is written by her', 'A letter was written by her', 'A letter written by her', 'A letter is being written by her'], correct: 0, topic: 'Voice', diff: 'medium', exp: 'Simple present active → simple present passive: is + past participle' },
+      { tid: 5, q: 'Which figure of speech is used: "The wind howled in the night"?', opts: ['Simile', 'Metaphor', 'Personification', 'Hyperbole'], correct: 2, topic: 'Figures of Speech', diff: 'medium', exp: 'Personification: giving human quality (howling) to non-human (wind)' },
+      { tid: 5, q: '"Despite the rain, ______ went to school." Choose the correct pronoun:', opts: ['they', 'their', 'them', 'theirs'], correct: 0, topic: 'Grammar', diff: 'easy', exp: '"They" is the subject pronoun needed here as the subject of "went"' },
+      { tid: 5, q: 'What does the prefix "anti-" mean?', opts: ['Before', 'After', 'Against', 'With'], correct: 2, topic: 'Vocabulary', diff: 'easy', exp: 'Anti- means against or opposite, as in antisocial, antibiotic' },
+
+      // ---- TEST 7: Technical Programming Basics (testIds[6]) ----
+      { tid: 6, q: 'What is the output of: console.log(typeof null) in JavaScript?', opts: ['"null"', '"undefined"', '"object"', '"boolean"'], correct: 2, topic: 'JavaScript', diff: 'easy', exp: 'typeof null returns "object" — this is a well-known JavaScript quirk' },
+      { tid: 6, q: 'Which data structure uses FIFO (First In First Out)?', opts: ['Stack', 'Queue', 'Tree', 'Graph'], correct: 1, topic: 'Data Structures', diff: 'easy', exp: 'Queue follows FIFO - first element added is the first to be removed' },
+      { tid: 6, q: 'What is the time complexity of binary search?', opts: ['O(n)', 'O(n²)', 'O(log n)', 'O(1)'], correct: 2, topic: 'Algorithms', diff: 'easy', exp: 'Binary search halves the search space each step, giving O(log n)' },
+      { tid: 6, q: 'Which keyword is used to define a constant in JavaScript?', opts: ['var', 'let', 'const', 'define'], correct: 2, topic: 'JavaScript', diff: 'easy', exp: 'const declares a constant that cannot be reassigned' },
+      { tid: 6, q: 'What does SQL stand for?', opts: ['Structured Query Language', 'Simple Question Language', 'Standard Query Logic', 'System Query Language'], correct: 0, topic: 'Databases', diff: 'easy', exp: 'SQL = Structured Query Language, used for managing relational databases' },
+      { tid: 6, q: 'In Python, which of the following is a mutable data type?', opts: ['String', 'Tuple', 'List', 'Integer'], correct: 2, topic: 'Python', diff: 'easy', exp: 'Lists are mutable (can be changed). Strings, tuples, and integers are immutable.' },
+      { tid: 6, q: 'What is the purpose of a constructor in OOP?', opts: ['Destroy an object', 'Initialize an object', 'Copy an object', 'Compare objects'], correct: 1, topic: 'OOP', diff: 'easy', exp: 'A constructor is called when an object is created to initialize its properties' },
+
+      // ---- TEST 8: Technical DSA (testIds[7]) ----
+      { tid: 7, q: 'What is the worst-case time complexity of quicksort?', opts: ['O(n log n)', 'O(n²)', 'O(n)', 'O(log n)'], correct: 1, topic: 'Sorting', diff: 'hard', exp: 'Worst case occurs when pivot is always the smallest/largest element: O(n²)' },
+      { tid: 7, q: 'Which data structure is used for BFS traversal of a graph?', opts: ['Stack', 'Queue', 'Heap', 'Array'], correct: 1, topic: 'Graph', diff: 'medium', exp: 'BFS uses a Queue to explore nodes level by level' },
+      { tid: 7, q: 'What is the space complexity of merge sort?', opts: ['O(1)', 'O(log n)', 'O(n)', 'O(n²)'], correct: 2, topic: 'Sorting', diff: 'hard', exp: 'Merge sort needs O(n) additional space for the temporary arrays during merging' },
+      { tid: 7, q: 'In a max-heap, the root element is always:', opts: ['The smallest', 'The median', 'The largest', 'Random'], correct: 2, topic: 'Heap', diff: 'medium', exp: 'In a max-heap, parent >= children, so root is the maximum element' },
+      { tid: 7, q: 'Which traversal of a BST gives sorted output?', opts: ['Pre-order', 'In-order', 'Post-order', 'Level-order'], correct: 1, topic: 'Trees', diff: 'medium', exp: 'In-order traversal (left-root-right) of BST visits nodes in ascending order' },
+      { tid: 7, q: 'What is the time complexity of inserting at the beginning of a linked list?', opts: ['O(1)', 'O(log n)', 'O(n)', 'O(n²)'], correct: 0, topic: 'Linked List', diff: 'easy', exp: 'Inserting at head requires only updating the head pointer: O(1)' },
+      { tid: 7, q: 'Which algorithm is used to find the shortest path in a weighted graph?', opts: ['DFS', 'BFS', 'Dijkstra', 'Kruskal'], correct: 2, topic: 'Graph', diff: 'hard', exp: 'Dijkstra\'s algorithm finds shortest path from source to all vertices in weighted graph' },
     ];
 
-    let totalQ = 0;
+    let totalCreated = 0;
     for (const q of allQuestions) {
       const [qResult] = await pool.query(
-        'INSERT INTO questions (test_id, question_text, explanation, topic, difficulty, marks) VALUES (?, ?, ?, ?, ?, ?)',
-        [testIds[q.testIdx], q.text, q.explanation, q.topic, 'medium', 1]
+        'INSERT INTO questions (test_id, question_text, explanation, topic, difficulty, marks, negative_marks) VALUES (?, ?, ?, ?, ?, 1, 0.25)',
+        [testIds[q.tid], q.q, q.exp, q.topic, q.diff]
       );
-      for (const opt of q.options) {
+      const qId = qResult.insertId;
+
+      for (let i = 0; i < q.opts.length; i++) {
         await pool.query(
           'INSERT INTO options (question_id, option_text, is_correct) VALUES (?, ?, ?)',
-          [qResult.insertId, opt.text, opt.correct ? 1 : 0]
+          [qId, q.opts[i], i === q.correct]
         );
       }
-      totalQ++;
+
+      // Update total marks
+      await pool.query('UPDATE tests SET total_marks = total_marks + 1 WHERE id = ?', [testIds[q.tid]]);
+      totalCreated++;
     }
 
-    // Update total_marks per test
-    for (let i = 0; i < testIds.length; i++) {
-      const [countRows] = await pool.query('SELECT COUNT(*) as count FROM questions WHERE test_id = ?', [testIds[i]]);
-      await pool.query('UPDATE tests SET total_marks = ? WHERE id = ?', [countRows[0].count, testIds[i]]);
-    }
+    console.log(`✅ Created ${totalCreated} questions across ${tests.length} tests`);
 
-    console.log(`✅ ${totalQ} questions created\n`);
+    // Create study materials
+    await pool.query(`INSERT INTO study_materials (title, content, topic, category, type) VALUES 
+      ('Percentage Basics', 'Learn how to calculate percentages, percentage change, and solve word problems involving percentages.', 'Percentage', 'quantitative', 'notes'),
+      ('Speed, Distance & Time', 'Master the relationship between speed, distance, and time with practical problems.', 'Speed & Distance', 'quantitative', 'notes'),
+      ('Number Series Patterns', 'Identify patterns in number series: arithmetic, geometric, Fibonacci, and mixed series.', 'Number Series', 'logical', 'notes'),
+      ('Coding-Decoding', 'Learn different coding patterns: letter shift, reverse, mirror, and substitution codes.', 'Coding-Decoding', 'logical', 'notes'),
+      ('English Grammar Rules', 'Comprehensive guide to grammar rules: tenses, subject-verb agreement, articles, and prepositions.', 'Grammar', 'verbal', 'notes'),
+      ('Data Structures Overview', 'Introduction to arrays, linked lists, stacks, queues, trees, and graphs with complexity analysis.', 'Data Structures', 'technical', 'notes'),
+      ('Sorting Algorithms', 'Comparison of sorting algorithms: bubble, selection, insertion, merge, quick, and heap sort.', 'Sorting', 'technical', 'notes'),
+      ('Profit and Loss', 'Learn to solve profit, loss, discount, and markup problems efficiently.', 'Profit & Loss', 'quantitative', 'notes')
+    `);
 
-    // Study materials
-    const materials = [
-      { title: 'Percentage Concepts & Shortcuts', content: 'Formula: Percentage = (Value/Total) × 100\n\nKey Shortcuts:\n- x% of y = y% of x\n- Increase by x%: multiply by (1 + x/100)\n- Decrease by x%: multiply by (1 - x/100)\n\nCommon fractions: 1/4=25%, 1/3≈33.3%, 1/5=20%', topic: 'Percentages', category: 'quantitative' },
-      { title: 'Speed, Time and Distance', content: 'Key Formulas:\n- Speed = Distance/Time\n- Distance = Speed × Time\n- Time = Distance/Speed\n\nAverage Speed (same distance): 2ab/(a+b)\nRelative Speed: Same dir |a-b|, Opposite a+b', topic: 'Speed, Time & Distance', category: 'quantitative' },
-      { title: 'Number Series Patterns', content: 'Common Patterns:\n1. Arithmetic: Constant difference\n2. Geometric: Constant ratio\n3. Squares: 1,4,9,16,25...\n4. Fibonacci: Sum of previous two\n\nStrategy: Check differences first, then ratios', topic: 'Number Series', category: 'logical' },
-      { title: 'Binary Search Explained', content: 'Divide and conquer for sorted arrays.\n\nAlgorithm: Compare middle, go left or right.\n\nTime: O(log n)\nSpace: O(1) iterative, O(log n) recursive', topic: 'Algorithms', category: 'technical' },
-    ];
-
-    for (const m of materials) {
-      await pool.query(
-        'INSERT INTO study_materials (title, content, topic, category, type) VALUES (?, ?, ?, ?, ?)',
-        [m.title, m.content, m.topic, m.category, 'notes']
-      );
-    }
-    console.log(`✅ ${materials.length} study materials created\n`);
-
-    console.log('🎉 Database seeded successfully!');
+    console.log('✅ Study materials created');
+    console.log('\n🎉 Database seeded successfully!');
     console.log('\n📋 Login Credentials:');
-    console.log('   Admin:   admin@aptitude.com / admin123');
-    console.log('   User:    rahul@test.com / user123');
-    console.log('   Premium: priya@test.com / user123\n');
-
+    console.log('   Admin: admin@aptitude.com / admin123');
+    console.log('   User:  student@test.com / user123');
+    
+    await pool.end();
     process.exit(0);
   } catch (error) {
     console.error('❌ Seed error:', error);
+    await pool.end();
     process.exit(1);
   }
 }

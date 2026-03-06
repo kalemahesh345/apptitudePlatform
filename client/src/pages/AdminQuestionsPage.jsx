@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiUpload, FiX, FiDownload } from 'react-icons/fi';
 import api from '../services/api';
 
 export default function AdminQuestionsPage() {
@@ -9,6 +9,7 @@ export default function AdminQuestionsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingQ, setEditingQ] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState({
     test_id: '', question_text: '', explanation: '', topic: '', difficulty: 'medium', marks: 1,
     options: [
@@ -35,7 +36,6 @@ export default function AdminQuestionsPage() {
     const fetchQuestions = async () => {
       try {
         const res = await api.get(`/tests/${selectedTestId}`);
-        // Need to get questions separately — use admin endpoint
         const qRes = await api.post(`/tests/${selectedTestId}/start`);
         setQuestions(qRes.data.questions || []);
       } catch (err) { console.error(err); }
@@ -96,7 +96,6 @@ export default function AdminQuestionsPage() {
         await api.post('/admin/questions', form);
       }
       setShowModal(false);
-      // Refresh
       if (selectedTestId) {
         const qRes = await api.post(`/tests/${selectedTestId}/start`);
         setQuestions(qRes.data.questions || []);
@@ -116,18 +115,51 @@ export default function AdminQuestionsPage() {
     }
   };
 
-  const handleCSVUpload = async (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    
+    const validTypes = ['.csv', '.xlsx', '.xls'];
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    if (!validTypes.includes(ext)) {
+      alert('Please upload a CSV or Excel (.xlsx) file');
+      return;
+    }
+
+    setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
     try {
       const res = await api.post('/admin/questions/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      alert(res.data.message);
+      alert(res.data.message + (res.data.errors?.length ? `\n${res.data.errors.length} errors occurred.` : ''));
+      // Refresh questions
+      if (selectedTestId) {
+        const qRes = await api.post(`/tests/${selectedTestId}/start`);
+        setQuestions(qRes.data.questions || []);
+      }
     } catch (err) {
-      alert('Upload failed');
+      alert('Upload failed: ' + (err.response?.data?.message || 'Unknown error'));
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const downloadTemplate = async () => {
+    try {
+      const res = await api.get('/admin/questions/template', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'questions_template.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Failed to download template');
     }
   };
 
@@ -146,10 +178,30 @@ export default function AdminQuestionsPage() {
           {tests.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
         </select>
         <button onClick={openCreate} className="btn btn-primary btn-sm" disabled={!selectedTestId}><FiPlus /> Add Question</button>
-        <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
-          <FiUpload /> Upload CSV
-          <input type="file" accept=".csv" onChange={handleCSVUpload} style={{ display: 'none' }} />
+        <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer', opacity: uploading ? 0.6 : 1 }}>
+          <FiUpload /> {uploading ? 'Uploading...' : 'Upload CSV/Excel'}
+          <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileUpload} style={{ display: 'none' }} disabled={uploading} />
         </label>
+        <button onClick={downloadTemplate} className="btn btn-sm" style={{
+          background: 'linear-gradient(135deg, #10b981, #059669)',
+          color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 6
+        }}>
+          <FiDownload /> Download Excel Template
+        </button>
+      </div>
+
+      {/* Upload Instructions */}
+      <div style={{
+        background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)',
+        padding: '14px 18px', marginBottom: 20, fontSize: '0.8rem',
+        border: '1px solid var(--border)'
+      }}>
+        <strong style={{ color: 'var(--accent-primary)' }}>📝 Bulk Upload Instructions:</strong>
+        <ul style={{ margin: '8px 0 0 16px', lineHeight: 1.8, color: 'var(--text-secondary)' }}>
+          <li>Download the Excel template using the green button above</li>
+          <li>Fill in your questions — columns: <code>test_id, question, option_a, option_b, option_c, option_d, correct_answer (A/B/C/D), explanation, topic, difficulty, marks, negative_marks</code></li>
+          <li>Upload the filled Excel (.xlsx) or CSV file</li>
+        </ul>
       </div>
 
       {/* Questions List */}

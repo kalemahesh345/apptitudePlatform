@@ -15,7 +15,7 @@ const getDashboardStats = async (req, res, next) => {
     
     const [activeUsers] = await pool.query(`
       SELECT COUNT(DISTINCT user_id) as count FROM test_attempts 
-      WHERE started_at >= datetime('now', '-7 days')
+      WHERE started_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
     `);
     
     const [testStats] = await pool.query(`
@@ -112,32 +112,41 @@ const deleteQuestion = async (req, res, next) => {
   }
 };
 
-// Bulk upload questions via CSV
+// Bulk upload questions via CSV or Excel
 const bulkUploadQuestions = async (req, res, next) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ message: 'No CSV file uploaded' });
+      return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    const results = [];
+    let results = [];
     const errors = [];
-    let rowNum = 0;
+    const filename = req.file.originalname.toLowerCase();
 
-    const stream = Readable.from(req.file.buffer.toString());
-    
-    await new Promise((resolve, reject) => {
-      stream
-        .pipe(csv())
-        .on('data', (row) => {
-          rowNum++;
-          results.push(row);
-        })
-        .on('end', resolve)
-        .on('error', reject);
-    });
+    if (filename.endsWith('.xlsx') || filename.endsWith('.xls')) {
+      // Handle Excel file
+      const XLSX = require('xlsx');
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      results = XLSX.utils.sheet_to_json(sheet);
+    } else {
+      // Handle CSV file
+      const stream = Readable.from(req.file.buffer.toString());
+      
+      await new Promise((resolve, reject) => {
+        stream
+          .pipe(csv())
+          .on('data', (row) => {
+            results.push(row);
+          })
+          .on('end', resolve)
+          .on('error', reject);
+      });
+    }
 
     let created = 0;
-    for (const row of results) {
+    for (const [idx, row] of results.entries()) {
       try {
         const options = [];
         if (row.option_a) options.push({ option_text: row.option_a, is_correct: row.correct_answer === 'A' });
@@ -157,11 +166,68 @@ const bulkUploadQuestions = async (req, res, next) => {
         });
         created++;
       } catch (err) {
-        errors.push({ row: rowNum, error: err.message });
+        errors.push({ row: idx + 1, error: err.message });
       }
     }
 
     res.json({ message: `Uploaded ${created} questions`, errors });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Download Excel template
+const downloadTemplate = async (req, res, next) => {
+  try {
+    const XLSX = require('xlsx');
+    
+    const templateData = [
+      {
+        test_id: 1,
+        question: 'What is 2 + 2?',
+        option_a: '3',
+        option_b: '4',
+        option_c: '5',
+        option_d: '6',
+        correct_answer: 'B',
+        explanation: 'Basic addition: 2 + 2 = 4',
+        topic: 'Arithmetic',
+        difficulty: 'easy',
+        marks: 1,
+        negative_marks: 0
+      },
+      {
+        test_id: 1,
+        question: 'What is the square root of 144?',
+        option_a: '10',
+        option_b: '11',
+        option_c: '12',
+        option_d: '13',
+        correct_answer: 'C',
+        explanation: '12 × 12 = 144',
+        topic: 'Arithmetic',
+        difficulty: 'medium',
+        marks: 1,
+        negative_marks: 0.25
+      }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 8 }, { wch: 40 }, { wch: 20 }, { wch: 20 },
+      { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 30 },
+      { wch: 15 }, { wch: 10 }, { wch: 8 }, { wch: 15 }
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Questions');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=questions_template.xlsx');
+    res.send(buffer);
   } catch (error) {
     next(error);
   }
@@ -213,8 +279,8 @@ const getLeaderboard = async (req, res, next) => {
     const { period = 'alltime' } = req.query;
     let dateFilter = '';
     
-    if (period === 'weekly') dateFilter = "AND ta.completed_at >= datetime('now', '-7 days')";
-    else if (period === 'monthly') dateFilter = "AND ta.completed_at >= datetime('now', '-30 days')";
+    if (period === 'weekly') dateFilter = "AND ta.completed_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+    else if (period === 'monthly') dateFilter = "AND ta.completed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
 
     const [rows] = await pool.query(`
       SELECT 
@@ -247,7 +313,7 @@ const getQuestionStats = async (req, res, next) => {
       SELECT q.id, q.question_text, q.topic,
         COUNT(ua.id) as total_attempts,
         SUM(ua.is_correct) as correct_count,
-        ROUND(CAST(SUM(ua.is_correct) AS REAL) / COUNT(ua.id) * 100, 2) as success_rate
+        ROUND(SUM(ua.is_correct) / COUNT(ua.id) * 100, 2) as success_rate
       FROM questions q
       JOIN user_answers ua ON q.id = ua.question_id
       GROUP BY q.id, q.question_text, q.topic
@@ -315,6 +381,7 @@ const generateResultPDF = async (req, res, next) => {
     const timeMins = Math.floor((attempt.time_taken_seconds || 0) / 60);
     const timeSecs = (attempt.time_taken_seconds || 0) % 60;
     doc.text(`Time Taken: ${timeMins}m ${timeSecs}s`);
+    doc.text(`Tab Switches: ${attempt.tab_switch_count || 0}`);
     doc.text(`Result: ${parseFloat(accuracy) >= 50 ? 'PASSED' : 'FAILED'}`);
     doc.moveDown(1);
 
@@ -326,21 +393,30 @@ const generateResultPDF = async (req, res, next) => {
     doc.moveDown(0.5);
 
     answers.forEach((ans, i) => {
-      if (doc.y > 700) {
+      // Check if enough space - add page if less than 120px remaining
+      if (doc.y > 650) {
         doc.addPage();
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#1e293b').text('Question-wise Breakdown (continued)');
+        doc.moveDown(0.5);
       }
 
       const status = ans.is_correct ? '✓' : (ans.selected_option_id ? '✗' : '–');
       const statusColor = ans.is_correct ? '#10b981' : (ans.selected_option_id ? '#ef4444' : '#f59e0b');
 
+      // Question number and status
       doc.fontSize(10).font('Helvetica-Bold').fillColor(statusColor);
-      doc.text(`${status} Q${i + 1}. `, { continued: true });
-      doc.font('Helvetica').fillColor('#1e293b');
-      doc.text(ans.question_text || '', { lineGap: 2 });
+      doc.text(`${status} Q${i + 1}. ${ans.question_text || ''}`, {
+        lineGap: 3,
+        width: 480
+      });
 
-      doc.fontSize(9).fillColor('#64748b');
-      doc.text(`   Topic: ${ans.topic || 'General'} | Your Answer: ${ans.selected_answer || 'Not answered'} | Correct: ${ans.correct_answer || 'N/A'}`);
-      doc.moveDown(0.5);
+      // Topic and answer details  
+      doc.moveDown(0.2);
+      doc.fontSize(8).font('Helvetica').fillColor('#64748b');
+      doc.text(`Topic: ${ans.topic || 'General'} | Your Answer: ${ans.selected_answer || 'Not answered'} | Correct: ${ans.correct_answer || 'N/A'}`, {
+        width: 480
+      });
+      doc.moveDown(0.8);
     });
 
     // Footer
@@ -360,5 +436,5 @@ module.exports = {
   createQuestion, updateQuestion, deleteQuestion, bulkUploadQuestions,
   createTest, updateTest, deleteTest,
   getAllResults, getLeaderboard, getQuestionStats,
-  generateResultPDF
+  generateResultPDF, downloadTemplate
 };

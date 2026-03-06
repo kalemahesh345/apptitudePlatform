@@ -103,6 +103,29 @@ const saveAnswer = async (req, res, next) => {
   }
 };
 
+// Report tab switch
+const reportTabSwitch = async (req, res, next) => {
+  try {
+    const { attemptId, tabSwitchCount } = req.body;
+
+    const attempt = await Attempt.findById(attemptId);
+    if (!attempt || attempt.user_id !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    await Attempt.updateTabSwitchCount(attemptId, tabSwitchCount);
+
+    // Auto-submit if too many tab switches (3+)
+    if (tabSwitchCount >= 3) {
+      return res.json({ autoSubmit: true, message: 'Too many tab switches. Test will be auto-submitted.' });
+    }
+
+    res.json({ saved: true, tabSwitchCount });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Submit test
 const submitTest = async (req, res, next) => {
   try {
@@ -209,4 +232,4 @@ const updateUserProgress = async (userId, answers, questions) => {
   }
 };
 
-module.exports = { getTests, getTestById, startTest, saveAnswer, submitTest };
+module.exports = { getTests, getTestById, startTest, saveAnswer, submitTest, reportTabSwitch };

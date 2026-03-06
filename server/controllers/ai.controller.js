@@ -199,7 +199,7 @@ const chat = async (req, res, next) => {
     if (req.user.role === 'USER') {
       const [countRows] = await pool.query(`
         SELECT COUNT(*) as count FROM ai_logs 
-        WHERE user_id = ? AND role = 'user' AND DATE(created_at) = date('now')
+        WHERE user_id = ? AND role = 'user' AND DATE(created_at) = CURDATE()
       `, [userId]);
       if (countRows[0].count >= 10) {
         return res.status(429).json({ message: 'Daily AI mentor limit reached. Upgrade to Premium for unlimited access.' });
