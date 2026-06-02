@@ -10,12 +10,8 @@ const getMaterials = async (req, res, next) => {
     if (topic) { query += ' AND topic = ?'; params.push(topic); }
     if (category) { query += ' AND category = ?'; params.push(category); }
     if (type) { query += ' AND type = ?'; params.push(type); }
-    
-    // Non-premium filter
-    if (req.user.role !== 'PREMIUM' && req.user.role !== 'ADMIN') {
-      query += ' AND is_premium = FALSE';
-    }
 
+    // Removed the is_premium check as it does not exist in schema
     query += ' ORDER BY created_at DESC';
     const [materials] = await pool.query(query, params);
     res.json({ materials });
@@ -52,4 +48,42 @@ const getTopics = async (req, res, next) => {
   }
 };
 
-module.exports = { getMaterials, getMaterialById, getTopics };
+// Create a new study material (Admin)
+const createMaterial = async (req, res, next) => {
+  try {
+    const { title, content, topic, category, type, video_url, file_url } = req.body;
+    const [result] = await pool.query(
+      'INSERT INTO study_materials (title, content, topic, category, type, video_url, file_url) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [title, content, topic, category, type || 'notes', video_url, file_url]
+    );
+    res.status(201).json({ message: 'Material created successfully', id: result.insertId });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update study material (Admin)
+const updateMaterial = async (req, res, next) => {
+  try {
+    const { title, content, topic, category, type, video_url, file_url } = req.body;
+    await pool.query(
+      'UPDATE study_materials SET title = ?, content = ?, topic = ?, category = ?, type = ?, video_url = ?, file_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [title, content, topic, category, type, video_url, file_url, req.params.id]
+    );
+    res.json({ message: 'Material updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Delete study material (Admin)
+const deleteMaterial = async (req, res, next) => {
+  try {
+    await pool.query('DELETE FROM study_materials WHERE id = ?', [req.params.id]);
+    res.json({ message: 'Material deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { getMaterials, getMaterialById, getTopics, createMaterial, updateMaterial, deleteMaterial };

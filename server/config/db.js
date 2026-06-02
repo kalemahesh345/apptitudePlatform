@@ -1,28 +1,38 @@
-const mysql = require('mysql2/promise');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'system',
-  database: process.env.DB_NAME || 'apptitude_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 0
+const dbPath = path.resolve(__dirname, '../apptitude.sqlite');
+
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('❌ SQLite connection error:', err.message);
+  } else {
+    console.log('✅ SQLite database connected successfully');
+    // Enable foreign keys
+    db.run('PRAGMA foreign_keys = ON;');
+  }
 });
 
-// Test connection on startup
-pool.getConnection()
-  .then(conn => {
-    console.log('✅ MySQL database connected successfully');
-    conn.release();
-  })
-  .catch(err => {
-    console.error('❌ MySQL connection error:', err.message);
-    console.error('   Please ensure MySQL is running and the database "apptitude_db" exists.');
-    console.error('   Run: mysql -u root -p < db/schema.sql');
-  });
+// Create a wrapper to mimic mysql2/promise pool interface
+const pool = {
+  query: (sql, params = []) => {
+    return new Promise((resolve, reject) => {
+      // If it's a SELECT statement or uses RETURNING
+      if (sql.trim().toUpperCase().startsWith('SELECT') || sql.toUpperCase().includes('RETURNING')) {
+        db.all(sql, params, (err, rows) => {
+          if (err) reject(err);
+          else resolve([rows]);
+        });
+      } else {
+        // For INSERT, UPDATE, DELETE
+        db.run(sql, params, function(err) {
+          if (err) reject(err);
+          // Return an array with an object containing insertId to mimic mysql2 behavior
+          else resolve([{ insertId: this.lastID, affectedRows: this.changes }]);
+        });
+      }
+    });
+  }
+};
 
 module.exports = pool;

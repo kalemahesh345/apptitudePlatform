@@ -1,17 +1,8 @@
 require('dotenv').config();
-const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
+const pool = require('../config/db');
 
 async function seed() {
-  const pool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'system',
-    database: process.env.DB_NAME || 'apptitude_db',
-    multipleStatements: true
-  });
-
   console.log('🌱 Starting database seed...');
 
   try {
@@ -19,7 +10,7 @@ async function seed() {
     const adminPassword = await bcrypt.hash('admin123', 12);
     const userPassword = await bcrypt.hash('user123', 12);
 
-    await pool.query(`INSERT IGNORE INTO users (name, email, password, role) VALUES 
+    await pool.query(`INSERT OR IGNORE INTO users (name, email, password, role) VALUES 
       ('Admin User', 'admin@aptitude.com', ?, 'ADMIN'),
       ('Test Student', 'student@test.com', ?, 'USER'),
       ('Premium User', 'premium@test.com', ?, 'PREMIUM')
@@ -160,12 +151,10 @@ async function seed() {
     console.log('\n📋 Login Credentials:');
     console.log('   Admin: admin@aptitude.com / admin123');
     console.log('   User:  student@test.com / user123');
-    
-    await pool.end();
+
     process.exit(0);
   } catch (error) {
     console.error('❌ Seed error:', error);
-    await pool.end();
     process.exit(1);
   }
 }

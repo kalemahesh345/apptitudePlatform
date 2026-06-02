@@ -15,7 +15,7 @@ const getDashboardStats = async (req, res, next) => {
     
     const [activeUsers] = await pool.query(`
       SELECT COUNT(DISTINCT user_id) as count FROM test_attempts 
-      WHERE started_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      WHERE started_at >= date('now', '-7 days')
     `);
     
     const [testStats] = await pool.query(`
@@ -77,6 +77,20 @@ const updateUserRole = async (req, res, next) => {
     }
     await User.updateRole(req.params.id, role);
     res.json({ message: 'Role updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteUser = async (req, res, next) => {
+  try {
+    const userId = req.params.id;
+    // Don't allow admin to delete themselves
+    if (userId == req.user.id) {
+      return res.status(400).json({ message: 'You cannot delete your own account' });
+    }
+    await pool.query('DELETE FROM users WHERE id = ?', [userId]);
+    res.json({ message: 'User deleted successfully' });
   } catch (error) {
     next(error);
   }
@@ -279,8 +293,8 @@ const getLeaderboard = async (req, res, next) => {
     const { period = 'alltime' } = req.query;
     let dateFilter = '';
     
-    if (period === 'weekly') dateFilter = "AND ta.completed_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
-    else if (period === 'monthly') dateFilter = "AND ta.completed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+    if (period === 'weekly') dateFilter = "AND ta.completed_at >= date('now', '-7 days')";
+    else if (period === 'monthly') dateFilter = "AND ta.completed_at >= date('now', '-30 days')";
 
     const [rows] = await pool.query(`
       SELECT 
@@ -432,7 +446,7 @@ const generateResultPDF = async (req, res, next) => {
 };
 
 module.exports = {
-  getDashboardStats, getUsers, updateUserRole,
+  getDashboardStats, getUsers, updateUserRole, deleteUser,
   createQuestion, updateQuestion, deleteQuestion, bulkUploadQuestions,
   createTest, updateTest, deleteTest,
   getAllResults, getLeaderboard, getQuestionStats,

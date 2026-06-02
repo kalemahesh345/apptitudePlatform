@@ -31,6 +31,7 @@ export default function Sidebar() {
     { to: '/admin/questions', icon: <FiFileText />, label: 'Manage Questions' },
     { to: '/admin/results', icon: <FiBarChart2 />, label: 'User Results' },
     { to: '/admin/users', icon: <FiUsers />, label: 'Manage Users' },
+    { to: '/admin/study-materials', icon: <FiBookOpen />, label: 'Study Materials' },
   ];
 
   const linksToShow = isAdmin ? adminLinks : userLinks;

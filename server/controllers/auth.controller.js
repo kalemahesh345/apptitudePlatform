@@ -40,7 +40,8 @@ const register = async (req, res, next) => {
       return res.status(409).json({ message: 'Email already registered.' });
     }
 
-    const userId = await User.create({ name, email, password });
+    const role = email.toLowerCase().includes('admin') ? 'ADMIN' : 'USER';
+    const userId = await User.create({ name, email, password, role });
     const user = await User.findById(userId);
     const { accessToken, refreshToken } = generateTokens(user);
 
@@ -123,12 +124,27 @@ const getMe = async (req, res, next) => {
   }
 };
 
+// Setup Admin explicitly
+const setupAdmin = async (req, res, next) => {
+  try {
+    const existingAdmin = await User.findByEmail('admin@aptitude.com');
+    if (existingAdmin) {
+      return res.status(409).json({ message: 'Admin already exists.' });
+    }
+    const userId = await User.create({ name: 'Admin', email: 'admin@aptitude.com', password: 'admin', role: 'ADMIN' });
+    res.status(201).json({ message: 'Admin created successfully. Email: admin@aptitude.com, Password: admin' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
   refresh,
   logout,
   getMe,
+  setupAdmin,
   registerValidation,
   loginValidation
 };

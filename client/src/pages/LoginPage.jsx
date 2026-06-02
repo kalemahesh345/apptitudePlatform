@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { FiCpu } from 'react-icons/fi';
+import toast from 'react-hot-toast';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -17,9 +18,12 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const result = await login(email, password);
+      toast.success('Welcome back!');
       navigate(result.user?.role === 'ADMIN' ? '/admin' : '/dashboard');
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      const msg = err.response?.data?.message || 'Login failed. Please try again.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

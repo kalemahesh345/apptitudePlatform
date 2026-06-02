@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { FiCpu } from 'react-icons/fi';
+import toast from 'react-hot-toast';
 
 export default function RegisterPage() {
   const [name, setName] = useState('');
@@ -29,9 +30,12 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(name, email, password);
+      toast.success('Account created successfully!');
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed');
+      const msg = err.response?.data?.message || 'Registration failed';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

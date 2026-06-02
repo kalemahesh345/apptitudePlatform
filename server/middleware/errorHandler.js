@@ -2,8 +2,8 @@ const errorHandler = (err, req, res, next) => {
   console.error('Error:', err.message);
   console.error('Stack:', err.stack);
 
-  // MySQL duplicate entry
-  if (err.code === 'ER_DUP_ENTRY') {
+  // MySQL/SQLite duplicate entry
+  if (err.code === 'ER_DUP_ENTRY' || (err.message && err.message.includes('UNIQUE constraint failed'))) {
     return res.status(409).json({
       message: 'Duplicate entry. This record already exists.',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined

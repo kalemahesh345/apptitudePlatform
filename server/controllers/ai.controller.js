@@ -5,10 +5,12 @@ const Attempt = require('../models/attempt.model');
 // Helper: Call Gemini API
 const callGemini = async (prompt) => {
   if (!aiConfig.isEnabled) {
+    console.log('AI disabled, returning mock response.');
     return generateMockResponse(prompt);
   }
 
   try {
+    console.log('Calling Gemini API...');
     const response = await fetch(`${aiConfig.apiUrl}?key=${aiConfig.apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -22,14 +24,25 @@ const callGemini = async (prompt) => {
     });
 
     const data = await response.json();
+    if (data.error) {
+      console.error('Gemini API Error Response:', data.error);
+      return generateMockResponse(prompt);
+    }
     if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
       return data.candidates[0].content.parts[0].text;
     }
+    console.error('Gemini API unexpected response format:', data);
     return 'AI analysis is currently unavailable. Please try again later.';
   } catch (error) {
-    console.error('Gemini API error:', error.message);
+    console.error('Gemini API request error:', error.message);
     return generateMockResponse(prompt);
   }
+};
+
+const cleanJsonResponse = (text) => {
+  if (!text) return {};
+  const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+  return JSON.parse(cleaned);
 };
 
 // Mock AI responses when no API key
@@ -102,19 +115,21 @@ const analyzeResults = async (req, res, next) => {
         Correct: ${attempt.correct_count}, Incorrect: ${attempt.incorrect_count}, Unanswered: ${attempt.unanswered_count}
         Category: ${attempt.category}
         Topic-wise performance: ${JSON.stringify(topicStats)}
-        Return a JSON object with: summary, strengths (array), weaknesses (array), recommendations (array), overallRating`;
+        Return a JSON object with: summary, strengths (array), weaknesses (array), recommendations (array), overallRating.
+        IMPORTANT: Keep all text including the summary extremely short, concise, and summary-type.`;
     } else {
       const topicStats = await Attempt.getTopicWiseStats(userId);
       const stats = await Attempt.getUserStats(userId);
       context = `Analyze overall aptitude performance:
         Total tests: ${stats.total_tests}, Avg accuracy: ${stats.avg_accuracy}%
         Topic-wise: ${JSON.stringify(topicStats)}
-        Return a JSON object with: summary, strengths (array), weaknesses (array), recommendations (array), overallRating`;
+        Return a JSON object with: summary, strengths (array), weaknesses (array), recommendations (array), overallRating.
+        IMPORTANT: Keep all text extremely short, concise, and summary-type.`;
     }
 
     const response = await callGemini(context + ' analyze');
     let parsed;
-    try { parsed = JSON.parse(response); } catch { parsed = { summary: response }; }
+    try { parsed = cleanJsonResponse(response); } catch (e) { console.error("Parse Error:", e); parsed = { summary: response }; }
 
     // Save to DB
     await pool.query(
@@ -144,7 +159,7 @@ const getRecommendations = async (req, res, next) => {
 
     const response = await callGemini(prompt);
     let parsed;
-    try { parsed = JSON.parse(response); } catch { parsed = { plan: response }; }
+    try { parsed = cleanJsonResponse(response); } catch (e) { console.error("Parse Error:", e); parsed = { plan: response }; }
 
     await pool.query(
       'INSERT INTO ai_recommendations (user_id, type, input_data, recommendation) VALUES (?, ?, ?, ?)',
@@ -176,12 +191,13 @@ const explainQuestion = async (req, res, next) => {
       User's Answer: ${userAnswer || 'Not answered'}
       Existing explanation: ${question.explanation || 'None'}
       Provide: step-by-step solution, formula used, common mistakes, tips.
-      Return JSON with: explanation, formula, concept, tips (array)
+      Return JSON with: explanation, formula, concept, tips (array).
+      IMPORTANT: Keep the explanation and all text extremely short, concise, and summary-type.
       explain`;
 
     const response = await callGemini(prompt);
     let parsed;
-    try { parsed = JSON.parse(response); } catch { parsed = { explanation: response }; }
+    try { parsed = cleanJsonResponse(response); } catch (e) { console.error("Parse Error:", e); parsed = { explanation: response }; }
 
     res.json({ explanation: parsed });
   } catch (error) {
@@ -199,7 +215,7 @@ const chat = async (req, res, next) => {
     if (req.user.role === 'USER') {
       const [countRows] = await pool.query(`
         SELECT COUNT(*) as count FROM ai_logs 
-        WHERE user_id = ? AND role = 'user' AND DATE(created_at) = CURDATE()
+        WHERE user_id = ? AND role = 'user' AND date(created_at) = date('now')
       `, [userId]);
       if (countRows[0].count >= 10) {
         return res.status(429).json({ message: 'Daily AI mentor limit reached. Upgrade to Premium for unlimited access.' });
@@ -222,6 +238,7 @@ const chat = async (req, res, next) => {
     const context = history.reverse().map(h => `${h.role}: ${h.message}`).join('\n');
     const prompt = `You are an AI study mentor for aptitude exam preparation. 
       Be helpful, encouraging, and educational. 
+      CRITICAL RULE: Keep your response extremely short, concise, and provide only a brief summary-type answer. Do not write long paragraphs.
       Previous conversation:\n${context}\n\nStudent says: ${message}\n\nRespond helpfully:`;
 
     const response = await callGemini(prompt);

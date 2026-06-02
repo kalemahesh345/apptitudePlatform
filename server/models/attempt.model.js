@@ -62,7 +62,7 @@ const Attempt = {
   async complete(attemptId, data) {
     await pool.query(`
       UPDATE test_attempts 
-      SET status = 'completed', completed_at = NOW(), time_taken_seconds = ?, 
+      SET status = 'completed', completed_at = CURRENT_TIMESTAMP, time_taken_seconds = ?, 
           score = ?, total_marks = ?, correct_count = ?, incorrect_count = ?, 
           unanswered_count = ?, accuracy = ?
       WHERE id = ?
@@ -153,7 +153,7 @@ const Attempt = {
   async getDailyAttemptCount(userId) {
     const [rows] = await pool.query(`
       SELECT COUNT(*) as count FROM test_attempts 
-      WHERE user_id = ? AND DATE(started_at) = CURDATE()
+      WHERE user_id = ? AND date(started_at) = date('now')
     `, [userId]);
     return rows[0].count;
   }

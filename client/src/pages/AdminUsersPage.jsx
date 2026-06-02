@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { FiUsers, FiSearch, FiShield, FiStar, FiUser } from 'react-icons/fi';
+import { FiUsers, FiSearch, FiShield, FiStar, FiUser, FiTrash2 } from 'react-icons/fi';
 import api from '../services/api';
+import toast from 'react-hot-toast';
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState([]);
@@ -27,10 +28,22 @@ export default function AdminUsersPage() {
     try {
       await api.put(`/admin/users/${userId}/role`, { role: newRole });
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      toast.success('Role updated successfully');
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update role');
+      toast.error(err.response?.data?.message || 'Failed to update role');
     } finally {
       setUpdatingRole(null);
+    }
+  };
+
+  const deleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
+    try {
+      await api.delete(`/admin/users/${userId}`);
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      toast.success('User deleted successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete user');
     }
   };
 
@@ -139,17 +152,27 @@ export default function AdminUsersPage() {
                     {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
                   </td>
                   <td>
-                    <select
-                      className="form-input"
-                      style={{ width: 'auto', minWidth: 120, padding: '6px 10px', fontSize: '0.8rem' }}
-                      value={user.role}
-                      onChange={e => updateRole(user.id, e.target.value)}
-                      disabled={updatingRole === user.id}
-                    >
-                      <option value="USER">USER</option>
-                      <option value="PREMIUM">PREMIUM</option>
-                      <option value="ADMIN">ADMIN</option>
-                    </select>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <select
+                        className="form-input"
+                        style={{ width: 'auto', minWidth: 120, padding: '6px 10px', fontSize: '0.8rem' }}
+                        value={user.role}
+                        onChange={e => updateRole(user.id, e.target.value)}
+                        disabled={updatingRole === user.id}
+                      >
+                        <option value="USER">USER</option>
+                        <option value="PREMIUM">PREMIUM</option>
+                        <option value="ADMIN">ADMIN</option>
+                      </select>
+                      <button 
+                        className="btn btn-sm btn-outline" 
+                        style={{ color: 'var(--danger)', padding: '6px 8px' }} 
+                        onClick={() => deleteUser(user.id)}
+                        title="Delete User"
+                      >
+                        <FiTrash2 />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

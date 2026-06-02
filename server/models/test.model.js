@@ -60,13 +60,13 @@ const Test = {
 
   async getQuestionsForTest(testId) {
     const [questions] = await pool.query(
-      'SELECT * FROM questions WHERE test_id = ? ORDER BY RAND()',
+      'SELECT * FROM questions WHERE test_id = ? ORDER BY RANDOM()',
       [testId]
     );
     
     for (let q of questions) {
       const [options] = await pool.query(
-        'SELECT id, option_text FROM options WHERE question_id = ? ORDER BY RAND()',
+        'SELECT id, option_text FROM options WHERE question_id = ? ORDER BY RANDOM()',
         [q.id]
       );
       q.options = options;

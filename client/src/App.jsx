@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { Toaster } from 'react-hot-toast';
 import Sidebar from './components/Sidebar';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -16,6 +17,7 @@ import AdminQuestionsPage from './pages/AdminQuestionsPage';
 import AdminTestsPage from './pages/AdminTestsPage';
 import AdminResultsPage from './pages/AdminResultsPage';
 import AdminUsersPage from './pages/AdminUsersPage';
+import AdminStudyMaterialsPage from './pages/AdminStudyMaterialsPage';
 import PremiumPage from './pages/PremiumPage';
 
 function ProtectedRoute({ children, adminOnly = false }) {
@@ -50,57 +52,63 @@ export default function App() {
   const defaultRoute = isAdmin ? '/admin' : '/dashboard';
 
   return (
-    <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to={defaultRoute} /> : <LoginPage />} />
-      <Route path="/register" element={isAuthenticated ? <Navigate to={defaultRoute} /> : <RegisterPage />} />
-      
-      {/* User Routes */}
-      <Route path="/dashboard" element={
-        <ProtectedRoute><AppLayout><DashboardPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/tests" element={
-        <ProtectedRoute><AppLayout><TestListPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/test/:testId" element={
-        <ProtectedRoute><AppLayout><TestTakingPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/results/:attemptId" element={
-        <ProtectedRoute><AppLayout><ResultPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/progress" element={
-        <ProtectedRoute><AppLayout><ProgressPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/study" element={
-        <ProtectedRoute><AppLayout><StudyMaterialPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/ai-mentor" element={
-        <ProtectedRoute><AppLayout><AIMentorPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/leaderboard" element={
-        <ProtectedRoute><AppLayout><LeaderboardPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/premium" element={
-        <ProtectedRoute><AppLayout><PremiumPage /></AppLayout></ProtectedRoute>
-      } />
+    <>
+      <Toaster position="top-right" />
+      <Routes>
+        <Route path="/login" element={isAuthenticated ? <Navigate to={defaultRoute} /> : <LoginPage />} />
+        <Route path="/register" element={isAuthenticated ? <Navigate to={defaultRoute} /> : <RegisterPage />} />
+        
+        {/* User Routes */}
+        <Route path="/dashboard" element={
+          <ProtectedRoute><AppLayout><DashboardPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/tests" element={
+          <ProtectedRoute><AppLayout><TestListPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/test/:testId" element={
+          <ProtectedRoute><AppLayout><TestTakingPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/results/:attemptId" element={
+          <ProtectedRoute><AppLayout><ResultPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/progress" element={
+          <ProtectedRoute><AppLayout><ProgressPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/study" element={
+          <ProtectedRoute><AppLayout><StudyMaterialPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/ai-mentor" element={
+          <ProtectedRoute><AppLayout><AIMentorPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/leaderboard" element={
+          <ProtectedRoute><AppLayout><LeaderboardPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/premium" element={
+          <ProtectedRoute><AppLayout><PremiumPage /></AppLayout></ProtectedRoute>
+        } />
 
-      {/* Admin Routes */}
-      <Route path="/admin" element={
-        <ProtectedRoute adminOnly><AppLayout><AdminDashboardPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/admin/tests" element={
-        <ProtectedRoute adminOnly><AppLayout><AdminTestsPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/admin/questions" element={
-        <ProtectedRoute adminOnly><AppLayout><AdminQuestionsPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/admin/results" element={
-        <ProtectedRoute adminOnly><AppLayout><AdminResultsPage /></AppLayout></ProtectedRoute>
-      } />
-      <Route path="/admin/users" element={
-        <ProtectedRoute adminOnly><AppLayout><AdminUsersPage /></AppLayout></ProtectedRoute>
-      } />
-      
-      <Route path="*" element={<Navigate to={isAuthenticated ? defaultRoute : "/login"} />} />
-    </Routes>
+        {/* Admin Routes */}
+        <Route path="/admin" element={
+          <ProtectedRoute adminOnly><AppLayout><AdminDashboardPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/admin/tests" element={
+          <ProtectedRoute adminOnly><AppLayout><AdminTestsPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/admin/questions" element={
+          <ProtectedRoute adminOnly><AppLayout><AdminQuestionsPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/admin/results" element={
+          <ProtectedRoute adminOnly><AppLayout><AdminResultsPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/admin/users" element={
+          <ProtectedRoute adminOnly><AppLayout><AdminUsersPage /></AppLayout></ProtectedRoute>
+        } />
+        <Route path="/admin/study-materials" element={
+          <ProtectedRoute adminOnly><AppLayout><AdminStudyMaterialsPage /></AppLayout></ProtectedRoute>
+        } />
+        
+        <Route path="*" element={<Navigate to={isAuthenticated ? defaultRoute : "/login"} />} />
+      </Routes>
+    </>
   );
 }
