@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: 'https://apptitudeplatform-1.onrender.com/api',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
@@ -23,9 +23,9 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && 
-        error.response?.data?.code === 'TOKEN_EXPIRED' && 
-        !originalRequest._retry) {
+    if (error.response?.status === 401 &&
+      error.response?.data?.code === 'TOKEN_EXPIRED' &&
+      !originalRequest._retry) {
       originalRequest._retry = true;
 
       try {
